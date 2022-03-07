@@ -4,22 +4,25 @@ import numpy
 import mne
 
 """
-SETTINGS
-
-
-
+Brain Vision Recorder Remote Data Access (RDA) Emulator
+Ver 1.0 March 4th, 2022
+Ver 2.0 March 7th, 2022
 """
 
 NUMBER_OF_MARKER_POINTS = 1
 MARKER_CHANNEL = 0
 DEFAULT_CH_RESOLUTION = 0.1
 NUMBER_OF_DATA_POINTS = 40
-ENABLE_REALTIME = False
+ENABLE_REALTIME = True
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 51244  # Port to listen on (non-privileged ports are > 1023)
 
-vhdr_fname = "C:\\...\\...\\....vhdr"
+vhdr_fname = "C:\\Users\\Simon\\Downloads\\bva_emulater\\bva_emulater\\20180514_P3000001.vhdr"
+
+BV_RECORDER_ID = [-114, 69, 88, 67, -106, -55, -122, 76, -81, 74, -104, -69, -10, -55, 20, 80]
+ids = numpy.array(BV_RECORDER_ID, dtype=numpy.int8)
+BV_RECORDER_ID_BYTE = ids.tobytes()
 
 #----------------------------------------------------------------------------------
 
@@ -27,9 +30,11 @@ def gen_header(id, msgsize, msgtype):
 
     header = bytes()
 
-    for m in range(0, 4):
-        tmp = numpy.array(id[m]).astype(numpy.int32)
-        header += tmp.tobytes()
+    #for m in range(0, 4):
+    #    tmp = numpy.array(id[m]).astype(numpy.int32)
+    #    header += tmp.tobytes()
+
+    header += BV_RECORDER_ID_BYTE
     
     header += numpy.array(msgsize).astype(numpy.uint32).tobytes()
     header += numpy.array(msgtype).astype(numpy.uint32).tobytes()
@@ -88,7 +93,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 tmp = numpy.array(raw.info['nchan']).astype(numpy.int32)
                 body += tmp.tobytes()
 
-                tmp = numpy.array(raw.info['sfreq']).astype(numpy.float64)
+                tmp = numpy.array(1000000/raw.info['sfreq']).astype(numpy.float64)
                 body += tmp.tobytes()
 
                 for m in range(raw.info['nchan']):
@@ -193,7 +198,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if state != 4:
                 conn.sendall(data_send)
                 if ENABLE_REALTIME:
-                    time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq'])
+                    time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*0.88)
                 if state == 3:
                     state = 4
                     input("Press Enter to Terminate...")
