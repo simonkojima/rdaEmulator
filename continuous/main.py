@@ -227,6 +227,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 if ENABLE_REALTIME:
                     time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
             except KeyboardInterrupt:
+                print("Started.")
                 idx = 0
                 streaming_finished = False
                 while not streaming_finished:
