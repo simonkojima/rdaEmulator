@@ -18,7 +18,7 @@ ENABLE_REALTIME = True
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 51244  # Port to listen on (non-privileged ports are > 1023)
 
-vhdr_fname = "C:\\Users\\Simon\\git\\rdaEmulator\\20180514_P3000001.vhdr"
+vhdr_fname = "C:\\Users\\Simon\\git\\rdaEmulator\\oddball_1.vhdr"
 
 BV_RECORDER_ID = [-114, 69, 88, 67, -106, -55, -122, 76, -81, 74, -104, -69, -10, -55, 20, 80]
 ids = numpy.array(BV_RECORDER_ID, dtype=numpy.int8)
