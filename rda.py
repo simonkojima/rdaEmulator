@@ -1,3 +1,4 @@
+import argparse
 import socket
 import time
 import numpy
@@ -6,19 +7,26 @@ import mne
 """
 Brain Vision Recorder Remote Data Access (RDA) Emulator
 Ver 2.1 14th March, 2022
+Ver 2.2 13th June, 2022
 """
+
+parser = argparse.ArgumentParser() 
+parser.add_argument('f_dir')
+args = parser.parse_args()
+
+vhdr_fname = args.f_dir
+if ('.vhdr' in vhdr_fname) is False:
+    vhdr_fname += ".vhdr"
 
 NUMBER_OF_MARKER_POINTS = 1
 MARKER_CHANNEL = 0
 DEFAULT_CH_RESOLUTION = 0.1
 NUMBER_OF_DATA_POINTS = 40
 ENABLE_REALTIME = True
-SLEEP_COEF = 0.1
+SLEEP_COEF = 0.88
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 51244  # Port to listen on (non-privileged ports are > 1023)
-
-vhdr_fname = "C:\\Users\\Simon\\Downloads\\bva_emulater\\bva_emulater\\20180514_P3000001.vhdr"
 
 BV_RECORDER_ID = [-114, 69, 88, 67, -106, -55, -122, 76, -81, 74, -104, -69, -10, -55, 20, 80]
 ids = numpy.array(BV_RECORDER_ID, dtype=numpy.int8)
