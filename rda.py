@@ -23,7 +23,7 @@ MARKER_CHANNEL = 0
 DEFAULT_CH_RESOLUTION = 0.1
 NUMBER_OF_DATA_POINTS = 40
 ENABLE_REALTIME = True
-SLEEP_COEF = 0.9
+SLEEP_COEF = 0.88
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 51244  # Port to listen on (non-privileged ports are > 1023)
@@ -53,11 +53,11 @@ def string2byte(string_array, format='ascii'):
     r = bytes()
     for string in string_array:
         r += bytes(string, format)
-        r += np.array([0]).astype(np.int8).tobytes()
+        r += np.array([0]).astype(np.uint8).tobytes()
     return r
 
 def gen_data_packets(eeg, markers, block, idx):
-    
+
     if idx+data_points > eeg.shape[1]:
 
         if idx > eeg.shape[1]:
@@ -178,7 +178,7 @@ events = mne.events_from_annotations(raw)
 events = events[0]
 events = events[1:]
 
-markers = np.zeros((eeg.shape[1])).astype(np.int8)
+markers = np.zeros((eeg.shape[1])).astype(np.uint8)
 for event in events:
     markers[event[0]] = event[2]
 
