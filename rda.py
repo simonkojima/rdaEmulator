@@ -53,7 +53,7 @@ def string2byte(string_array, format='ascii'):
     r = bytes()
     for string in string_array:
         r += bytes(string, format)
-        r += np.array([0]).astype(np.uint8).tobytes()
+        r += np.array([0]).astype(np.int8).tobytes()
     return r
 
 def gen_data_packets(eeg, markers, block, idx):
@@ -247,20 +247,3 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     conn.sendall(data_send)
                     if ENABLE_REALTIME:
                         time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
-                    
-        #---
-"""
-        msgtype = 3
-        msgsize = 24
-        header = gen_header(id, msgsize, msgtype)
-        data_send = header
-        state = 3
-        #---
-        conn.sendall(data_send)
-        if ENABLE_REALTIME:
-            time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
-        if state == 3:
-            input("Press Enter to Terminate...")
-            s.close()
-            conn.close()
-"""
