@@ -1,22 +1,21 @@
 import argparse
 import socket
 import time
+import json
 import numpy as np
+
+from multiprocessing import Process, Value
+
 import mne
+
+
+import utils
 
 """
 Brain Vision Recorder Remote Data Access (RDA) Emulator
 Ver 2.1 14th March, 2022
 Ver 2.2 13th June, 2022
 """
-
-parser = argparse.ArgumentParser() 
-parser.add_argument('f_dir')
-args = parser.parse_args()
-
-vhdr_fname = args.f_dir
-if ('.vhdr' in vhdr_fname) is False:
-    vhdr_fname += ".vhdr"
 
 NUMBER_OF_MARKER_POINTS = 1
 MARKER_CHANNEL = 0
@@ -56,7 +55,7 @@ def string2byte(string_array, format='ascii'):
         r += np.array([0]).astype(np.int8).tobytes()
     return r
 
-def gen_data_packets(eeg, markers, block, idx):
+def gen_data_packets(eeg, markers, block, idx, data_points=NUMBER_OF_DATA_POINTS):
 
     if idx+data_points > eeg.shape[1]:
 
@@ -162,88 +161,166 @@ def gen_zero_packets(n_ch, data_points,block):
 
     return data_send, block
 
-#eog_ch_name = ["",""]
+def main(vhdr_fname, status):
+    status.value = -999
+    raw = mne.io.read_raw_brainvision(vhdr_fname)
+    data_points = NUMBER_OF_DATA_POINTS
+    resolution = list()
+    for m in range(raw.info['nchan']):
+        resolution.append(DEFAULT_CH_RESOLUTION)
 
+    eeg = raw.get_data()*1000000 # convert unit from V to uV
+    eeg = eeg * 10 # somehow, streamed data from BV Recorder is multipled by 10.
 
-raw = mne.io.read_raw_brainvision(vhdr_fname)
-data_points = NUMBER_OF_DATA_POINTS
-resolution = list()
-for m in range(raw.info['nchan']):
-    resolution.append(DEFAULT_CH_RESOLUTION)
+    events = mne.events_from_annotations(raw)
+    events = events[0]
+    events = events[1:]
 
-eeg = raw.get_data()*1000000 # convert unit from V to uV
-eeg = eeg * 10 # somehow, streamed data from BV Recorder is multipled by 10.
+    markers = np.zeros((eeg.shape[1])).astype(np.uint8)
+    for event in events:
+        markers[event[0]] = event[2]
 
-events = mne.events_from_annotations(raw)
-events = events[0]
-events = events[1:]
+    # initialize
 
-markers = np.zeros((eeg.shape[1])).astype(np.uint8)
-for event in events:
-    markers[event[0]] = event[2]
+    block = -1
+    state = 0
 
-# initialize
+    finish = False
 
-block = -1
-state = 0
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+        conn, addr = s.accept()
+        with conn:
+            print(f"Connected by {addr}")
 
-finish = False
+            #---
+            print("start")
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.bind((HOST, PORT))
-    s.listen()
-    conn, addr = s.accept()
-    with conn:
-        print(f"Connected by {addr}")
+            body = bytes()
 
-        #---
-        print("start")
-
-        body = bytes()
-
-        tmp = np.array(raw.info['nchan']).astype(np.int32)
-        body += tmp.tobytes()
-
-        tmp = np.array(1000000/raw.info['sfreq']).astype(np.float64)
-        body += tmp.tobytes()
-
-        for m in range(raw.info['nchan']):
-            tmp = np.array(resolution[m]).astype(np.float64)
+            tmp = np.array(raw.info['nchan']).astype(np.int32)
             body += tmp.tobytes()
 
-        tmp = bytes()
-        ch_names = raw.info['ch_names']
-        body += string2byte(ch_names)
+            tmp = np.array(1000000/raw.info['sfreq']).astype(np.float64)
+            body += tmp.tobytes()
 
-        msgtype = 1
-        msgsize = len(body) + 24
-        header = gen_header(id, msgsize, msgtype)
+            for m in range(raw.info['nchan']):
+                tmp = np.array(resolution[m]).astype(np.float64)
+                body += tmp.tobytes()
 
-        data_send = header + body
+            tmp = bytes()
+            ch_names = raw.info['ch_names']
+            body += string2byte(ch_names)
 
-        conn.sendall(data_send)
-        if ENABLE_REALTIME:
-            time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
+            msgtype = 1
+            msgsize = len(body) + 24
+            header = gen_header(id, msgsize, msgtype)
 
-        #---
-        # Data
-        print("Press Ctrl+C to Start.")
-        while not finish:
-            try:
+            data_send = header + body
+
+            conn.sendall(data_send)
+            if ENABLE_REALTIME:
+                time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
+
+            #---
+            # Data
+            while not finish:
                 data_send, block = gen_zero_packets(raw.info['nchan'], data_points, block)
                 conn.sendall(data_send)
                 if ENABLE_REALTIME:
                     time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
-            except KeyboardInterrupt:
-                print("Started.")
-                idx = 0
-                streaming_finished = False
-                while not streaming_finished:
-                    data_send, block, idx = gen_data_packets(eeg, markers, block, idx)
-                    if idx == -1:
-                        streaming_finished = True
-                        print("Data Streaming Finished.")
-                        print("Press Ctrl+C to Start again.")
-                    conn.sendall(data_send)
-                    if ENABLE_REALTIME:
-                        time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
+                if status.value == -999:
+                    status.value = 0
+                #print(status.value)
+                if status.value == -100:
+                    print("Started.")
+                    idx = 0
+                    streaming_finished = False
+                    while not streaming_finished:
+                        data_send, block, idx = gen_data_packets(eeg, markers, block, idx)
+                        if idx == -1:
+                            streaming_finished = True
+                            status.value = -99
+                            print("Data Streaming Finished.")
+                        conn.sendall(data_send)
+                        if ENABLE_REALTIME:
+                            time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
+                        
+
+def interface(name, name_main_outlet='main', log_file=True, log_stdout=True, status=None, vhdr_fname=""):
+    # ==============================================
+    # This function is called from main module.
+    # It opens LSL and communicate with main module.
+    # ==============================================
+    #
+    # name : name of this module. main module will call this module with this name.
+    #        This name will be given by main module.
+    # name_main_outlet : name of main module's outlet. This module will find the main module with this name.
+    #
+    # status : value which is shared with main module.
+    # -999 : not ready
+    # 0 : ready
+    # -100 : start
+    # -99 : finished
+
+
+    status.value = -999
+    params = dict() # variable for receive parameters
+
+    inlet = utils.getIntermoduleCommunicationInlet(name_main_outlet)
+    print('LSL connected, %s' %name)
+
+    p = Process(target=main, args=(vhdr_fname, status))
+    p.start()
+
+    while True:
+        data, _ = inlet.pull_sample(timeout=0.01)
+        if data is not None:
+            if data[0].lower() == name:
+                if data[1].lower() == 'cmd':
+                    # ------------------------------------
+                    # command
+                    if data[2].lower() == 'start' or data[2].lower() == 'play':
+                        print("started")
+                        status.value = -100
+                        print("status.value : %d" %status.value)
+                    elif data[2].lower() == 'stop':
+                        print("receive stop command")
+                        #stim_con.stop()
+                    # modify here to add new commands
+                    # ------------------------------------                        
+
+                elif data[1].lower() == 'params':
+                    # ------------------------------------
+                    # parameters
+                    params[data[2]] = json.loads(data[3])
+                    #logger.debug('Param Received : %s' %str(params[data[2]]))
+                    # ------------------------------------
+                else:
+                    raise ValueError("Unknown LSL data type received.")
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser() 
+    parser.add_argument('f_dir')
+    args = parser.parse_args()
+
+    vhdr_fname = args.f_dir
+    if ('.vhdr' in vhdr_fname) is False:
+        vhdr_fname += ".vhdr"
+
+    outlet = utils.createIntermoduleCommunicationOutlet('main', channel_count=4, id='rda_main')
+
+    status = Value('i', -999)
+    #interface('rda', status=status)
+    p = Process(target=interface, args=('rda', 'main', False, False, status, vhdr_fname))
+    p.start()
+    
+    while True:
+        while status.value != 0:
+            time.sleep(0.1)
+        input("Press Any Key to Start")
+        utils.send_cmd_LSL(outlet, 'rda', 'start')
+        while status.value != -99:
+            time.sleep(0.1)
