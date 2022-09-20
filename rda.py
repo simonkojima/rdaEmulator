@@ -4,7 +4,7 @@ import time
 import json
 import numpy as np
 
-from multiprocessing import Process, Value
+from multiprocessing import Process, Value, Array
 
 import mne
 
@@ -161,8 +161,8 @@ def gen_zero_packets(n_ch, data_points,block):
 
     return data_send, block
 
-def main(vhdr_fname, status):
-    status.value = -999
+def main(vhdr_fname, share):
+    share[0] = -999
     raw = mne.io.read_raw_brainvision(vhdr_fname)
     data_points = NUMBER_OF_DATA_POINTS
     resolution = list()
@@ -195,7 +195,6 @@ def main(vhdr_fname, status):
             print(f"Connected by {addr}")
 
             #---
-            print("start")
 
             body = bytes()
 
@@ -230,10 +229,10 @@ def main(vhdr_fname, status):
                 conn.sendall(data_send)
                 if ENABLE_REALTIME:
                     time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
-                if status.value == -999:
-                    status.value = 0
-                #print(status.value)
-                if status.value == -100:
+                if share[0] == -999:
+                    share[0] = 0
+                #print(share[0])
+                if share[0] == -100:
                     print("Started.")
                     idx = 0
                     streaming_finished = False
@@ -241,14 +240,14 @@ def main(vhdr_fname, status):
                         data_send, block, idx = gen_data_packets(eeg, markers, block, idx)
                         if idx == -1:
                             streaming_finished = True
-                            status.value = -99
+                            share[0] = -99
                             print("Data Streaming Finished.")
                         conn.sendall(data_send)
                         if ENABLE_REALTIME:
                             time.sleep(NUMBER_OF_DATA_POINTS/raw.info['sfreq']*SLEEP_COEF)
                         
 
-def interface(name, name_main_outlet='main', log_file=True, log_stdout=True, status=None, vhdr_fname=""):
+def interface(name, name_main_outlet='main', log_file=True, log_stdout=True, share=None, vhdr_fname=""):
     # ==============================================
     # This function is called from main module.
     # It opens LSL and communicate with main module.
@@ -258,20 +257,16 @@ def interface(name, name_main_outlet='main', log_file=True, log_stdout=True, sta
     #        This name will be given by main module.
     # name_main_outlet : name of main module's outlet. This module will find the main module with this name.
     #
-    # status : value which is shared with main module.
-    # -999 : not ready
-    # 0 : ready
-    # -100 : start
-    # -99 : finished
+    # share : instance of multiprocessing.Array, shared with parent module.
+    # share[0] : -999 -> not ready
 
-
-    status.value = -999
+    share[0] = -999
     params = dict() # variable for receive parameters
 
     inlet = utils.getIntermoduleCommunicationInlet(name_main_outlet)
     print('LSL connected, %s' %name)
 
-    p = Process(target=main, args=(vhdr_fname, status))
+    p = Process(target=main, args=(vhdr_fname, share))
     p.start()
 
     while True:
@@ -282,9 +277,7 @@ def interface(name, name_main_outlet='main', log_file=True, log_stdout=True, sta
                     # ------------------------------------
                     # command
                     if data[2].lower() == 'start' or data[2].lower() == 'play':
-                        print("started")
-                        status.value = -100
-                        print("status.value : %d" %status.value)
+                        share[0] = -100
                     elif data[2].lower() == 'stop':
                         print("receive stop command")
                         #stim_con.stop()
@@ -312,15 +305,16 @@ if __name__ == '__main__':
 
     outlet = utils.createIntermoduleCommunicationOutlet('main', channel_count=4, id='rda_main')
 
-    status = Value('i', -999)
-    #interface('rda', status=status)
-    p = Process(target=interface, args=('rda', 'main', False, False, status, vhdr_fname))
+    share = Array('i', [-999 for m in range(8)])
+    #interface('rda', share=share)
+    p = Process(target=interface, args=('rda', 'main', False, False, share, vhdr_fname))
     p.start()
+    time.sleep(1)
     
     while True:
-        while status.value != 0:
+        while share[0] != 0:
             time.sleep(0.1)
         input("Press Any Key to Start")
         utils.send_cmd_LSL(outlet, 'rda', 'start')
-        while status.value != -99:
+        while share[0] != -99:
             time.sleep(0.1)
